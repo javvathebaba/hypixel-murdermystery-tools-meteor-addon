@@ -13,7 +13,6 @@ import meteordevelopment.meteorclient.utils.render.RenderUtils;
 import meteordevelopment.meteorclient.utils.render.WireframeEntityRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.ChatFormatting;
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
@@ -28,21 +27,10 @@ import java.util.UUID;
 
 public class HeldItemTracker extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgRender = settings.createGroup("Render");
+    private final SettingGroup sgGroup1 = settings.createGroup("Item Group 1");
+    private final SettingGroup sgGroup2 = settings.createGroup("Item Group 2");
 
-    private final Setting<List<Item>> targetItems = sgGeneral.add(new ItemListSetting.Builder()
-        .name("target-items")
-        .description("Items that trigger player tracking when held.")
-        .build()
-    );
-
-    private final Setting<Boolean> notifyChat = sgGeneral.add(new BoolSetting.Builder()
-        .name("chat-notification")
-        .description("Alerts you in chat when a player first holds a target item.")
-        .defaultValue(true)
-        .build()
-    );
-
+    // ==================== General Settings ====================
     private final Setting<Boolean> ignoreSelf = sgGeneral.add(new BoolSetting.Builder()
         .name("ignore-self")
         .description("Do not track yourself.")
@@ -50,165 +38,116 @@ public class HeldItemTracker extends Module {
         .build()
     );
 
-    private final Setting<Boolean> tracers = sgRender.add(new BoolSetting.Builder()
-        .name("tracers")
-        .description("Draws a tracer line to flagged players.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Boolean> esp = sgRender.add(new BoolSetting.Builder()
-        .name("esp")
-        .description("Draws an ESP box around flagged players.")
-        .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Boolean> wireframe = sgRender.add(new BoolSetting.Builder()
-        .name("wireframe-model")
-        .description("Renders a full 3D wireframe model instead of a bounding box.")
+    private final Setting<Boolean> notifyDimensionReset = sgGeneral.add(new BoolSetting.Builder()
+        .name("notify-dimension-reset")
+        .description("Sends a chat message when tracked players are cleared upon switching dimensions.")
         .defaultValue(false)
-        .visible(esp::get)
         .build()
     );
 
-    private final Setting<ShapeMode> shapeMode = sgRender.add(new EnumSetting.Builder<ShapeMode>()
-        .name("shape-mode")
-        .description("How the ESP shapes are rendered.")
+    // ==================== Group 1 Settings ====================
+    private final Setting<List<Item>> targetItems1 = sgGroup1.add(new ItemListSetting.Builder()
+        .name("group-1-items")
+        .description("First set of items that trigger player tracking when held.")
+        .build()
+    );
+
+    private final Setting<Boolean> notifyChat1 = sgGroup1.add(new BoolSetting.Builder()
+        .name("group-1-chat-notify")
+        .description("Alerts you in chat when a player first holds a Group 1 item.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<String> chatFormat1 = sgGroup1.add(new StringSetting.Builder()
+        .name("group-1-chat-message")
+        .description("Custom chat alert for Group 1. Use {player} and {item} as placeholders, and & for color codes.")
+        .defaultValue("&c[Group 1] &f{player} &7held &6{item}&7!")
+        .visible(notifyChat1::get)
+        .build()
+    );
+
+    private final Setting<Boolean> tracers1 = sgGroup1.add(new BoolSetting.Builder()
+        .name("group-1-tracers")
+        .description("Draws a tracer line to Group 1 players.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> esp1 = sgGroup1.add(new BoolSetting.Builder()
+        .name("group-1-esp")
+        .description("Draws an ESP box around Group 1 players.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> wireframe1 = sgGroup1.add(new BoolSetting.Builder()
+        .name("group-1-wireframe")
+        .description("Renders a full 3D wireframe model for Group 1 instead of a bounding box.")
+        .defaultValue(false)
+        .visible(esp1::get)
+        .build()
+    );
+
+    private final Setting<ShapeMode> shapeMode1 = sgGroup1.add(new EnumSetting.Builder<ShapeMode>()
+        .name("group-1-shape-mode")
+        .description("How Group 1 ESP shapes are rendered.")
         .defaultValue(ShapeMode.Both)
-        .visible(esp::get)
+        .visible(esp1::get)
         .build()
     );
 
-    private final Setting<SettingColor> sideColor = sgRender.add(new ColorSetting.Builder()
-        .name("side-color")
-        .description("The side fill color of the ESP.")
+    private final Setting<SettingColor> sideColor1 = sgGroup1.add(new ColorSetting.Builder()
+        .name("group-1-side-color")
+        .description("The side fill color of Group 1 ESP.")
         .defaultValue(new SettingColor(255, 50, 50, 40))
-        .visible(() -> esp.get() && shapeMode.get().sides())
+        .visible(() -> esp1.get() && shapeMode1.get().sides())
         .build()
     );
 
-    private final Setting<SettingColor> lineColor = sgRender.add(new ColorSetting.Builder()
-        .name("line-color")
-        .description("The outline and tracer color.")
+    private final Setting<SettingColor> lineColor1 = sgGroup1.add(new ColorSetting.Builder()
+        .name("group-1-line-color")
+        .description("The outline and tracer color for Group 1.")
         .defaultValue(new SettingColor(255, 50, 50, 255))
         .build()
     );
 
-    private final Set<UUID> flaggedPlayers = new HashSet<>();
+    // ==================== Group 2 Settings ====================
+    private final Setting<List<Item>> targetItems2 = sgGroup2.add(new ItemListSetting.Builder()
+        .name("group-2-items")
+        .description("Second set of items that trigger player tracking when held.")
+        .build()
+    );
 
-    public HeldItemTracker() {
-        super(AddonTemplate.CATEGORY, "held-item-tracker", "Flags players who hold specific items with ESP and tracers.");
-    }
+    private final Setting<Boolean> notifyChat2 = sgGroup2.add(new BoolSetting.Builder()
+        .name("group-2-chat-notify")
+        .description("Alerts you in chat when a player first holds a Group 2 item.")
+        .defaultValue(true)
+        .build()
+    );
 
-    @Override
-    public void onActivate() {
-        flaggedPlayers.clear();
-    }
+    private final Setting<String> chatFormat2 = sgGroup2.add(new StringSetting.Builder()
+        .name("group-2-chat-message")
+        .description("Custom chat alert for Group 2. Use {player} and {item} as placeholders, and & for color codes.")
+        .defaultValue("&b[Group 2] &f{player} &7held &e{item}&7!")
+        .visible(notifyChat2::get)
+        .build()
+    );
 
-    @Override
-    public void onDeactivate() {
-        flaggedPlayers.clear();
-    }
+    private final Setting<Boolean> tracers2 = sgGroup2.add(new BoolSetting.Builder()
+        .name("group-2-tracers")
+        .description("Draws a tracer line to Group 2 players.")
+        .defaultValue(true)
+        .build()
+    );
 
-    @EventHandler
-    private void onGameJoined(GameJoinedEvent event) {
-        flaggedPlayers.clear();
-    }
+    private final Setting<Boolean> esp2 = sgGroup2.add(new BoolSetting.Builder()
+        .name("group-2-esp")
+        .description("Draws an ESP box around Group 2 players.")
+        .defaultValue(true)
+        .build()
+    );
 
-    @EventHandler
-    private void onGameLeft(GameLeftEvent event) {
-        flaggedPlayers.clear();
-    }
-
-    @EventHandler
-    private void onPacketReceive(PacketEvent.Receive event) {
-        if (event.packet instanceof ClientboundRespawnPacket packet) {
-            if (mc.level != null && !mc.level.dimension().equals(packet.commonPlayerSpawnInfo().dimension())) {
-                flaggedPlayers.clear();
-                if (notifyChat.get()) {
-                    info("Switched dimensions — cleared tracked players.");
-                }
-            }
-        }
-    }
-
-@EventHandler
-    private void onTick(TickEvent.Post event) {
-        if (mc.level == null || mc.player == null) return;
-        List<Item> items = targetItems.get();
-        if (items.isEmpty()) return;
-
-        for (Player player : mc.level.players()) {
-            if (ignoreSelf.get() && player == mc.player) continue;
-            if (flaggedPlayers.contains(player.getUUID())) continue;
-
-            ItemStack mainHand = player.getMainHandItem();
-            ItemStack offHand = player.getOffhandItem();
-
-            ItemStack matchedStack = null;
-            if (!mainHand.isEmpty() && items.contains(mainHand.getItem())) {
-                matchedStack = mainHand;
-            } else if (!offHand.isEmpty() && items.contains(offHand.getItem())) {
-                matchedStack = offHand;
-            }
-
-            if (matchedStack != null) {
-                flaggedPlayers.add(player.getUUID());
-                if (notifyChat.get()) {
-                    info("Player %s%s%s held %s%s%s!",
-                        ChatFormatting.RED, player.getName().getString(), ChatFormatting.GRAY,
-                        ChatFormatting.GOLD, matchedStack.getHoverName().getString(), ChatFormatting.GRAY
-                    );
-                }
-            }
-        }
-    }
-
-    @EventHandler
-    private void onRender3D(Render3DEvent event) {
-        if (mc.level == null || flaggedPlayers.isEmpty()) return;
-
-        for (Player player : mc.level.players()) {
-            if (!flaggedPlayers.contains(player.getUUID())) continue;
-
-            double x = Mth.lerp(event.tickDelta, player.xOld, player.getX());
-            double y = Mth.lerp(event.tickDelta, player.yOld, player.getY());
-            double z = Mth.lerp(event.tickDelta, player.zOld, player.getZ());
-
-            if (tracers.get()) {
-                double targetY = y + player.getEyeHeight();
-                event.renderer.line(
-                    RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
-                    x, targetY, z,
-                    lineColor.get()
-                );
-            }
-
-            if (esp.get()) {
-                if (wireframe.get()) {
-                    WireframeEntityRenderer.render(
-                        event, player, 1.0,
-                        sideColor.get(), lineColor.get(), shapeMode.get()
-                    );
-                } else {
-                    AABB box = player.getBoundingBox();
-                    double dx = x - player.getX();
-                    double dy = y - player.getY();
-                    double dz = z - player.getZ();
-
-                    event.renderer.box(
-                        box.minX + dx, box.minY + dy, box.minZ + dz,
-                        box.maxX + dx, box.maxY + dy, box.maxZ + dz,
-                        sideColor.get(), lineColor.get(), shapeMode.get(), 0
-                    );
-                }
-            }
-        }
-    }
-
-    @Override
-    public String getInfoString() {
-        return Integer.toString(flaggedPlayers.size());
-    }
-}
+    private final Setting<Boolean> wireframe2 = sgGroup2.add(new BoolSetting.Builder()
+        .name("group-2-wireframe")
+        .description("Renders a full 3D wireframe model for Group 2 instead of a bounding box.")
