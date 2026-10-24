@@ -1,6 +1,8 @@
 package com.example.addon;
 
+import com.example.addon.modules.DroppedBowTracker;
 import com.example.addon.modules.HeldItemTracker;
+import com.example.addon.modules.HotbarKeybindModule;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
@@ -16,8 +18,9 @@ public class AddonTemplate extends MeteorAddon {
 
     @Override
     public void onInitialize() {
-        LOG.info("Initializing Addon");
+        LOG.info("Initializing Held Item Tracker Addon");
 
+        // Modules
         Modules.get().add(new HeldItemTracker());
         Modules.get().add(new DroppedBowTracker());
         Modules.get().add(new HotbarKeybindModule());
