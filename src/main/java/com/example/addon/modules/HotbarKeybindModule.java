@@ -68,7 +68,7 @@ public class HotbarKeybindModule extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.gameMode == null || mc.screen != null) return;
+        if (mc.player == null || mc.gameMode == null) return;
 
         boolean isKeyHeld = switchKey.get().isPressed();
 
