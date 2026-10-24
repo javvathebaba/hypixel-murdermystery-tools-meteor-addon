@@ -13,13 +13,13 @@ import meteordevelopment.meteorclient.utils.render.RenderUtils;
 import meteordevelopment.meteorclient.utils.render.WireframeEntityRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 
 import java.util.HashSet;
 import java.util.List;
@@ -30,7 +30,6 @@ public class HeldItemTracker extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
 
-    // Configurable item list in the module menu
     private final Setting<List<Item>> targetItems = sgGeneral.add(new ItemListSetting.Builder()
         .name("target-items")
         .description("Items that trigger player tracking when held.")
@@ -51,7 +50,6 @@ public class HeldItemTracker extends Module {
         .build()
     );
 
-    // Built-in Tracer & ESP rendering settings
     private final Setting<Boolean> tracers = sgRender.add(new BoolSetting.Builder()
         .name("tracers")
         .description("Draws a tracer line to flagged players.")
@@ -68,7 +66,7 @@ public class HeldItemTracker extends Module {
 
     private final Setting<Boolean> wireframe = sgRender.add(new BoolSetting.Builder()
         .name("wireframe-model")
-        .description("Renders a full 3D wireframe model (like Meteor's Wireframe ESP) instead of a bounding box.")
+        .description("Renders a full 3D wireframe model instead of a bounding box.")
         .defaultValue(false)
         .visible(esp::get)
         .build()
@@ -97,7 +95,6 @@ public class HeldItemTracker extends Module {
         .build()
     );
 
-    // Stores UUIDs of players flagged in the current session/dimension
     private final Set<UUID> flaggedPlayers = new HashSet<>();
 
     public HeldItemTracker() {
@@ -114,23 +111,20 @@ public class HeldItemTracker extends Module {
         flaggedPlayers.clear();
     }
 
-    // Reset when joining a server
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
         flaggedPlayers.clear();
     }
 
-    // Reset when disconnecting from a server
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         flaggedPlayers.clear();
     }
 
-    // Reset when switching dimensions (PlayerRespawnS2CPacket is sent on dimension change and death)
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (event.packet instanceof PlayerRespawnS2CPacket packet) {
-            if (mc.world != null && !mc.world.getRegistryKey().equals(packet.commonPlayerSpawnInfo().dimension())) {
+        if (event.packet instanceof ClientboundRespawnPacket packet) {
+            if (mc.level != null && !mc.level.dimension().equals(packet.commonPlayerSpawnInfo().dimension())) {
                 flaggedPlayers.clear();
                 if (notifyChat.get()) {
                     info("Switched dimensions — cleared tracked players.");
@@ -139,19 +133,18 @@ public class HeldItemTracker extends Module {
         }
     }
 
-    // Scan players each tick for configured items
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
         List<Item> items = targetItems.get();
         if (items.isEmpty()) return;
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (ignoreSelf.get() && player == mc.player) continue;
-            if (flaggedPlayers.contains(player.getUuid())) continue;
+            if (flaggedPlayers.contains(player.getUUID())) continue;
 
-            ItemStack mainHand = player.getMainHandStack();
-            ItemStack offHand = player.getOffHandStack();
+            ItemStack mainHand = player.getMainHandItem();
+            ItemStack offHand = player.getOffhandItem();
 
             Item matchedItem = null;
             if (!mainHand.isEmpty() && items.contains(mainHand.getItem())) {
@@ -161,33 +154,30 @@ public class HeldItemTracker extends Module {
             }
 
             if (matchedItem != null) {
-                flaggedPlayers.add(player.getUuid());
+                flaggedPlayers.add(player.getUUID());
                 if (notifyChat.get()) {
                     info("Player %s%s%s held %s%s%s!",
-                        Formatting.RED, player.getName().getString(), Formatting.GRAY,
-                        Formatting.GOLD, matchedItem.getName().getString(), Formatting.GRAY
+                        ChatFormatting.RED, player.getName().getString(), ChatFormatting.GRAY,
+                        ChatFormatting.GOLD, matchedItem.getName().getString(), ChatFormatting.GRAY
                     );
                 }
             }
         }
     }
 
-    // Render Meteor's built-in ESP and Tracer primitives
     @EventHandler
     private void onRender3D(Render3DEvent event) {
-        if (mc.world == null || flaggedPlayers.isEmpty()) return;
+        if (mc.level == null || flaggedPlayers.isEmpty()) return;
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
-            if (!flaggedPlayers.contains(player.getUuid())) continue;
+        for (Player player : mc.level.players()) {
+            if (!flaggedPlayers.contains(player.getUUID())) continue;
 
-            // Interpolate coordinates for smooth 3D rendering
-            double x = MathHelper.lerp(event.tickDelta, player.lastRenderX, player.getX());
-            double y = MathHelper.lerp(event.tickDelta, player.lastRenderY, player.getY());
-            double z = MathHelper.lerp(event.tickDelta, player.lastRenderZ, player.getZ());
+            double x = Mth.lerp(event.tickDelta, player.xOld, player.getX());
+            double y = Mth.lerp(event.tickDelta, player.yOld, player.getY());
+            double z = Mth.lerp(event.tickDelta, player.zOld, player.getZ());
 
-            // 1. Render Tracer (Targeting eye height of the flagged player)
             if (tracers.get()) {
-                double targetY = y + player.getStandingEyeHeight();
+                double targetY = y + player.getEyeHeight();
                 event.renderer.line(
                     RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
                     x, targetY, z,
@@ -195,7 +185,6 @@ public class HeldItemTracker extends Module {
                 );
             }
 
-            // 2. Render ESP (Wireframe model or 3D Bounding Box)
             if (esp.get()) {
                 if (wireframe.get()) {
                     WireframeEntityRenderer.render(
@@ -203,7 +192,7 @@ public class HeldItemTracker extends Module {
                         sideColor.get(), lineColor.get(), shapeMode.get()
                     );
                 } else {
-                    Box box = player.getBoundingBox();
+                    AABB box = player.getBoundingBox();
                     double dx = x - player.getX();
                     double dy = y - player.getY();
                     double dz = z - player.getZ();
