@@ -4,21 +4,27 @@ import com.example.addon.AddonTemplate;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.SlotActionType;
-
-import java.util.List;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 
 public class HotbarKeybindModule extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
+    private final Setting<Keybind> switchKey = sgGeneral.add(new KeybindSetting.Builder()
+        .name("switch-key")
+        .description("Hold this key to switch to the target item, and release to swap back.")
+        .defaultValue(Keybind.none())
+        .build()
+    );
+
     private final Setting<Item> targetItem = sgGeneral.add(new ItemSetting.Builder()
         .name("target-item")
         .description("The item to switch to when the keybind is pressed.")
-        .defaultValue(net.minecraft.item.Items.ENDER_PEARL)
+        .defaultValue(Items.ENDER_PEARL)
         .build()
     );
 
@@ -38,10 +44,11 @@ public class HotbarKeybindModule extends Module {
 
     private final Setting<Integer> targetHotbarSlot = sgGeneral.add(new IntSetting.Builder()
         .name("hotbar-slot")
-        .description("The hotbar slot (1-9) to use for switching.")
+        .description("The hotbar slot (1-9) to temporarily move the inventory item into.")
         .defaultValue(1)
         .min(1)
         .max(9)
+        .visible(searchInventory::get)
         .build()
     );
 
@@ -50,54 +57,46 @@ public class HotbarKeybindModule extends Module {
     private boolean wasPressed = false;
 
     public HotbarKeybindModule() {
-        super(AddonTemplate.CATEGORY, "hotbar-keybind-switcher", "Automatically switches to and uses a specified item when a keybind is held, returning it afterwards.");
+        super(AddonTemplate.CATEGORY, "hotbar-keybind-switcher", "Automatically switches to and uses a specified item while a keybind is held, returning it afterwards.");
     }
 
     @Override
     public void onDeactivate() {
+        wasPressed = false;
         restoreOriginalSlot();
     }
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.interactionManager == null) return;
+        if (mc.player == null || mc.gameMode == null || mc.screen != null) return;
 
-        // Check if the module's bind key is currently being held down
-        boolean isKeyHeld = isActive() && mc.options.keyUse.isPressed(); // Or custom bind listener if integrated with Meteor KeybindSetting
-
-        // For a dedicated keybind setting, you can also use KeybindSetting:
-        // (If assigned to a key, we check if that key code is pressed)
+        boolean isKeyHeld = switchKey.get().isPressed();
 
         if (isKeyHeld && !wasPressed) {
-            // Key just pressed down
             wasPressed = true;
-            previousSlot = mc.player.getInventory().selectedSlot;
-            
+            previousSlot = mc.player.getInventory().getSelectedSlot();
+
             int slotToSwitch = targetHotbarSlot.get() - 1;
             Item target = targetItem.get();
 
-            // 1. Check if item is already in hotbar
             int hotbarSlot = findItemInHotbar(target);
             if (hotbarSlot != -1) {
-                mc.player.getInventory().selectedSlot = hotbarSlot;
+                InvUtils.swap(hotbarSlot, false);
                 pulledFromSlot = -1;
             } else if (searchInventory.get()) {
-                // 2. Search main inventory and swap to target hotbar slot
                 int invSlot = findItemInInventory(target);
                 if (invSlot != -1) {
                     pulledFromSlot = invSlot;
-                    // Swap inventory item into target hotbar slot
                     InvUtils.move().from(invSlot).toHotbar(slotToSwitch);
-                    mc.player.getInventory().selectedSlot = slotToSwitch;
+                    InvUtils.swap(slotToSwitch, false);
                 }
             }
 
-            if (autoUse.get() && mc.player.getMainHandStack().getItem() == target) {
-                mc.interactionManager.interactItem(mc.player, mc.player.getActiveHand());
+            if (autoUse.get() && mc.player.getMainHandItem().is(target)) {
+                mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
             }
 
         } else if (!isKeyHeld && wasPressed) {
-            // Key released — restore previous state
             wasPressed = false;
             restoreOriginalSlot();
         }
@@ -106,22 +105,21 @@ public class HotbarKeybindModule extends Module {
     private void restoreOriginalSlot() {
         if (mc.player == null) return;
 
-        if (previousSlot != -1) {
-            mc.player.getInventory().selectedSlot = previousSlot;
-            previousSlot = -1;
-        }
-
-        // If we pulled an item from main inventory into the hotbar, swap it back
         if (pulledFromSlot != -1) {
             int hotbarSlot = targetHotbarSlot.get() - 1;
             InvUtils.move().fromHotbar(hotbarSlot).to(pulledFromSlot);
             pulledFromSlot = -1;
         }
+
+        if (previousSlot != -1) {
+            InvUtils.swap(previousSlot, false);
+            previousSlot = -1;
+        }
     }
 
     private int findItemInHotbar(Item item) {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() == item) {
+            if (mc.player.getInventory().getItem(i).is(item)) {
                 return i;
             }
         }
@@ -130,7 +128,7 @@ public class HotbarKeybindModule extends Module {
 
     private int findItemInInventory(Item item) {
         for (int i = 9; i < 36; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() == item) {
+            if (mc.player.getInventory().getItem(i).is(item)) {
                 return i;
             }
         }
