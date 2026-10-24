@@ -10,6 +10,8 @@ import meteordevelopment.meteorclient.utils.render.RenderUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -77,7 +79,6 @@ public class DroppedBowTracker extends Module {
         .build()
     );
 
-    // Tracks armor stand UUIDs that have already triggered a chat notification
     private final Set<UUID> notifiedBows = new HashSet<>();
 
     public DroppedBowTracker() {
@@ -97,7 +98,7 @@ public class DroppedBowTracker extends Module {
     private ItemStack getBowStack(ArmorStand armorStand) {
         if (armorStand.getMainHandItem().is(Items.BOW)) return armorStand.getMainHandItem();
         if (armorStand.getOffhandItem().is(Items.BOW)) return armorStand.getOffhandItem();
-        ItemStack headStack = armorStand.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD);
+        ItemStack headStack = armorStand.getItemBySlot(EquipmentSlot.HEAD);
         if (headStack.is(Items.BOW)) return headStack;
         return null;
     }
@@ -106,7 +107,7 @@ public class DroppedBowTracker extends Module {
     private void onTick(TickEvent.Post event) {
         if (mc.level == null) return;
 
-        for (net.minecraft.world.entity.Entity entity : mc.level.entities().getAll()) {
+        for (Entity entity : mc.level.entitiesForRendering()) {
             if (entity instanceof ArmorStand armorStand) {
                 ItemStack bowStack = getBowStack(armorStand);
                 if (bowStack != null) {
@@ -135,14 +136,13 @@ public class DroppedBowTracker extends Module {
     private void onRender3D(Render3DEvent event) {
         if (mc.level == null) return;
 
-        for (net.minecraft.world.entity.Entity entity : mc.level.entities().getAll()) {
+        for (Entity entity : mc.level.entitiesForRendering()) {
             if (entity instanceof ArmorStand armorStand) {
                 if (getBowStack(armorStand) != null) {
                     double x = Mth.lerp(event.tickDelta, armorStand.xOld, armorStand.getX());
                     double y = Mth.lerp(event.tickDelta, armorStand.yOld, armorStand.getY());
                     double z = Mth.lerp(event.tickDelta, armorStand.zOld, armorStand.getZ());
 
-                    // 1. Render Tracer (if enabled)
                     if (tracers.get()) {
                         event.renderer.line(
                             RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
@@ -151,7 +151,6 @@ public class DroppedBowTracker extends Module {
                         );
                     }
 
-                    // 2. Render ESP Box (if enabled)
                     if (esp.get()) {
                         AABB box = armorStand.getBoundingBox();
                         double dx = x - armorStand.getX();
@@ -173,7 +172,7 @@ public class DroppedBowTracker extends Module {
     public String getInfoString() {
         int count = 0;
         if (mc.level != null) {
-            for (net.minecraft.world.entity.Entity entity : mc.level.entities().getAll()) {
+            for (Entity entity : mc.level.entitiesForRendering()) {
                 if (entity instanceof ArmorStand armorStand && getBowStack(armorStand) != null) {
                     count++;
                 }
