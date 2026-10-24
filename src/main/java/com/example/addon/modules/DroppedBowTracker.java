@@ -106,7 +106,7 @@ public class DroppedBowTracker extends Module {
     private void onTick(TickEvent.Post event) {
         if (mc.level == null) return;
 
-        for (net.minecraft.world.entity.Entity entity : mc.level.entities()) {
+        for (net.minecraft.world.entity.Entity entity : mc.level.entities().getAll()) {
             if (entity instanceof ArmorStand armorStand) {
                 ItemStack bowStack = getBowStack(armorStand);
                 if (bowStack != null) {
@@ -135,7 +135,7 @@ public class DroppedBowTracker extends Module {
     private void onRender3D(Render3DEvent event) {
         if (mc.level == null) return;
 
-        for (net.minecraft.world.entity.Entity entity : mc.level.entities()) {
+        for (net.minecraft.world.entity.Entity entity : mc.level.entities().getAll()) {
             if (entity instanceof ArmorStand armorStand) {
                 if (getBowStack(armorStand) != null) {
                     double x = Mth.lerp(event.tickDelta, armorStand.xOld, armorStand.getX());
@@ -173,7 +173,7 @@ public class DroppedBowTracker extends Module {
     public String getInfoString() {
         int count = 0;
         if (mc.level != null) {
-            for (net.minecraft.world.entity.Entity entity : mc.level.entities()) {
+            for (net.minecraft.world.entity.Entity entity : mc.level.entities().getAll()) {
                 if (entity instanceof ArmorStand armorStand && getBowStack(armorStand) != null) {
                     count++;
                 }
