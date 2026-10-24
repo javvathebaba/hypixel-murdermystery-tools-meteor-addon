@@ -133,7 +133,7 @@ public class HeldItemTracker extends Module {
         }
     }
 
-    @EventHandler
+@EventHandler
     private void onTick(TickEvent.Post event) {
         if (mc.level == null || mc.player == null) return;
         List<Item> items = targetItems.get();
@@ -146,19 +146,19 @@ public class HeldItemTracker extends Module {
             ItemStack mainHand = player.getMainHandItem();
             ItemStack offHand = player.getOffhandItem();
 
-            Item matchedItem = null;
+            ItemStack matchedStack = null;
             if (!mainHand.isEmpty() && items.contains(mainHand.getItem())) {
-                matchedItem = mainHand.getItem();
+                matchedStack = mainHand;
             } else if (!offHand.isEmpty() && items.contains(offHand.getItem())) {
-                matchedItem = offHand.getItem();
+                matchedStack = offHand;
             }
 
-            if (matchedItem != null) {
+            if (matchedStack != null) {
                 flaggedPlayers.add(player.getUUID());
                 if (notifyChat.get()) {
                     info("Player %s%s%s held %s%s%s!",
                         ChatFormatting.RED, player.getName().getString(), ChatFormatting.GRAY,
-                        ChatFormatting.GOLD, matchedItem.getName().getString(), ChatFormatting.GRAY
+                        ChatFormatting.GOLD, matchedStack.getHoverName().getString(), ChatFormatting.GRAY
                     );
                 }
             }
