@@ -151,3 +151,210 @@ public class HeldItemTracker extends Module {
     private final Setting<Boolean> wireframe2 = sgGroup2.add(new BoolSetting.Builder()
         .name("group-2-wireframe")
         .description("Renders a full 3D wireframe model for Group 2 instead of a bounding box.")
+        .defaultValue(false)
+        .visible(esp2::get)
+        .build()
+    );
+
+    private final Setting<ShapeMode> shapeMode2 = sgGroup2.add(new EnumSetting.Builder<ShapeMode>()
+        .name("group-2-shape-mode")
+        .description("How Group 2 ESP shapes are rendered.")
+        .defaultValue(ShapeMode.Both)
+        .visible(esp2::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> sideColor2 = sgGroup2.add(new ColorSetting.Builder()
+        .name("group-2-side-color")
+        .description("The side fill color of Group 2 ESP.")
+        .defaultValue(new SettingColor(50, 200, 255, 40))
+        .visible(() -> esp2.get() && shapeMode2.get().sides())
+        .build()
+    );
+
+    private final Setting<SettingColor> lineColor2 = sgGroup2.add(new ColorSetting.Builder()
+        .name("group-2-line-color")
+        .description("The outline and tracer color for Group 2.")
+        .defaultValue(new SettingColor(50, 200, 255, 255))
+        .build()
+    );
+
+    // Tracked player UUID sets per group
+    private final Set<UUID> flaggedGroup1 = new HashSet<>();
+    private final Set<UUID> flaggedGroup2 = new HashSet<>();
+
+    public HeldItemTracker() {
+        super(AddonTemplate.CATEGORY, "held-item-tracker", "Flags players holding configurable item sets with separate ESP, tracers, and custom chat alerts.");
+    }
+
+    private void clearTrackedPlayers() {
+        flaggedGroup1.clear();
+        flaggedGroup2.clear();
+    }
+
+    @Override
+    public void onActivate() {
+        clearTrackedPlayers();
+    }
+
+    @Override
+    public void onDeactivate() {
+        clearTrackedPlayers();
+    }
+
+    @EventHandler
+    private void onGameJoined(GameJoinedEvent event) {
+        clearTrackedPlayers();
+    }
+
+    @EventHandler
+    private void onGameLeft(GameLeftEvent event) {
+        clearTrackedPlayers();
+    }
+
+    @EventHandler
+    private void onPacketReceive(PacketEvent.Receive event) {
+        if (event.packet instanceof ClientboundRespawnPacket packet) {
+            if (mc.level != null && !mc.level.dimension().equals(packet.commonPlayerSpawnInfo().dimension())) {
+                clearTrackedPlayers();
+                if (notifyDimensionReset.get()) {
+                    info("Switched dimensions — cleared tracked players.");
+                }
+            }
+        }
+    }
+
+    @EventHandler
+    private void onTick(TickEvent.Post event) {
+        if (mc.level == null || mc.player == null) return;
+
+        List<Item> items1 = targetItems1.get();
+        List<Item> items2 = targetItems2.get();
+        if (items1.isEmpty() && items2.isEmpty()) return;
+
+        for (Player player : mc.level.players()) {
+            if (ignoreSelf.get() && player == mc.player) continue;
+
+            UUID uuid = player.getUUID();
+            ItemStack mainHand = player.getMainHandItem();
+            ItemStack offHand = player.getOffhandItem();
+
+            // Check Group 1
+            if (!items1.isEmpty() && !flaggedGroup1.contains(uuid)) {
+                ItemStack matched1 = getMatchedStack(mainHand, offHand, items1);
+                if (matched1 != null) {
+                    flaggedGroup1.add(uuid);
+                    if (notifyChat1.get()) {
+                        sendCustomNotification(chatFormat1.get(), player, matched1);
+                    }
+                }
+            }
+
+            // Check Group 2
+            if (!items2.isEmpty() && !flaggedGroup2.contains(uuid)) {
+                ItemStack matched2 = getMatchedStack(mainHand, offHand, items2);
+                if (matched2 != null) {
+                    flaggedGroup2.add(uuid);
+                    if (notifyChat2.get()) {
+                        sendCustomNotification(chatFormat2.get(), player, matched2);
+                    }
+                }
+            }
+        }
+    }
+
+    private ItemStack getMatchedStack(ItemStack mainHand, ItemStack offHand, List<Item> targetList) {
+        if (!mainHand.isEmpty() && targetList.contains(mainHand.getItem())) {
+            return mainHand;
+        }
+        if (!offHand.isEmpty() && targetList.contains(offHand.getItem())) {
+            return offHand;
+        }
+        return null;
+    }
+
+    private void sendCustomNotification(String template, Player player, ItemStack stack) {
+        String playerName = player.getName().getString();
+        String itemName = stack.getHoverName().getString();
+
+        String formattedMessage = template
+            .replace("{player}", playerName)
+            .replace("{item}", itemName)
+            .replace('&', '\u00a7');
+
+        info(formattedMessage);
+    }
+
+    @EventHandler
+    private void onRender3D(Render3DEvent event) {
+        if (mc.level == null || (flaggedGroup1.isEmpty() && flaggedGroup2.isEmpty())) return;
+
+        for (Player player : mc.level.players()) {
+            UUID uuid = player.getUUID();
+            boolean inGroup1 = flaggedGroup1.contains(uuid);
+            boolean inGroup2 = flaggedGroup2.contains(uuid);
+
+            if (!inGroup1 && !inGroup2) continue;
+
+            double x = Mth.lerp(event.tickDelta, player.xOld, player.getX());
+            double y = Mth.lerp(event.tickDelta, player.yOld, player.getY());
+            double z = Mth.lerp(event.tickDelta, player.zOld, player.getZ());
+
+            // If a player is in Group 1, render Group 1 visuals; otherwise render Group 2 visuals
+            if (inGroup1) {
+                renderPlayerVisuals(
+                    event, player, x, y, z,
+                    tracers1.get(), esp1.get(), wireframe1.get(),
+                    shapeMode1.get(), sideColor1.get(), lineColor1.get()
+                );
+            } else {
+                renderPlayerVisuals(
+                    event, player, x, y, z,
+                    tracers2.get(), esp2.get(), wireframe2.get(),
+                    shapeMode2.get(), sideColor2.get(), lineColor2.get()
+                );
+            }
+        }
+    }
+
+    private void renderPlayerVisuals(
+        Render3DEvent event, Player player,
+        double x, double y, double z,
+        boolean drawTracer, boolean drawEsp, boolean useWireframe,
+        ShapeMode mode, SettingColor sideCol, SettingColor lineCol
+    ) {
+        if (drawTracer) {
+            double targetY = y + player.getEyeHeight();
+            event.renderer.line(
+                RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
+                x, targetY, z,
+                lineCol
+            );
+        }
+
+        if (drawEsp) {
+            if (useWireframe) {
+                WireframeEntityRenderer.render(
+                    event, player, 1.0,
+                    sideCol, lineCol, mode
+                );
+            } else {
+                AABB box = player.getBoundingBox();
+                double dx = x - player.getX();
+                double dy = y - player.getY();
+                double dz = z - player.getZ();
+
+                event.renderer.box(
+                    box.minX + dx, box.minY + dy, box.minZ + dz,
+                    box.maxX + dx, box.maxY + dy, box.maxZ + dz,
+                    sideCol, lineCol, mode, 0
+                );
+            }
+        }
+    }
+
+    @Override
+    public String getInfoString() {
+        return flaggedGroup1.size() + " | " + flaggedGroup2.size();
+    }
+}
