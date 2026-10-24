@@ -16,10 +16,11 @@ public class AddonTemplate extends MeteorAddon {
 
     @Override
     public void onInitialize() {
-        LOG.info("Initializing Held Item Tracker Addon");
+        LOG.info("Initializing Addon");
 
-        // Modules
         Modules.get().add(new HeldItemTracker());
+        Modules.get().add(new DroppedBowTracker());
+        Modules.get().add(new HotbarKeybindModule());
     }
 
     @Override
